@@ -1,0 +1,38 @@
+# 后端 API Dockerfile
+FROM node:18-alpine
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装系统依赖
+RUN apk add --no-cache \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+# 复制 package.json 和 package-lock.json
+COPY package*.json ./
+
+# 安装依赖
+RUN npm ci --only=production
+
+# 安装后端特定依赖
+RUN npm install mysql2 express cors dotenv jsonwebtoken bcryptjs helmet express-rate-limit
+
+# 复制源代码
+COPY . .
+
+# 创建后端目录结构
+RUN mkdir -p /app/backend
+
+# 复制后端代码
+COPY server/ ./server/
+
+# 暴露端口
+EXPOSE 3001
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3001/health || exit 1
+
+# 启动后端服务
+CMD ["node", "server/server.js"]

@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # MySQL 数据库服务
+  mysql:
+    image: mysql:8.0
+    container_name: ai-chat-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ai_chat_root_2024
+      MYSQL_DATABASE: ai_chat_app
+      MYSQL_USER: ai_chat_user
+      MYSQL_PASSWORD: ai_chat_pass_2024
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/migrations/mysql_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+      interval: 10s
+
+  # 后端 API 服务
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    container_name: ai-chat-backend
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=ai_chat_app
+      - DB_USER=ai_chat_user
+      - DB_PASSWORD=ai_chat_pass_2024
+      - JWT_SECRET=ai_chat_jwt_secret_2024_very_secure
+      - API_PORT=3001
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      timeout: 10s
+      retries: 5
+      interval: 30s
+
+  # 前端应用服务
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ai-chat-frontend
+    restart: always
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=http://localhost:3001
+      - REACT_APP_WS_URL=ws://localhost:3001
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # 开发环境服务
+  dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    container_name: ai-chat-dev
+    ports:
+      - "3002:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - REACT_APP_API_URL=http://localhost:3001
+      - REACT_APP_WS_URL=ws://localhost:3001
+    depends_on:
+      - mysql
+      - backend
+    networks:
+      - app-network
+    profiles:
+      - dev
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge
